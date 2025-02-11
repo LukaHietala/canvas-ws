@@ -3,7 +3,7 @@
 import { serve } from "@hono/node-server";
 import { Hono } from "hono";
 import type { Http2Server } from "http2";
-import { Server } from "socket.io";
+import { Server, Socket } from "socket.io";
 
 const app = new Hono();
 
@@ -29,12 +29,42 @@ const io = new Server(server as Http2Server, {
 });
 
 io.on("connection", (socket) => {
-  console.log("a user connected");
-  socket.on("disconnect", () => {
-    console.log("user disconnected");
-  });
-  socket.on("event", (value) => {
-    console.log(value);
-    io.b("event", value);
-  });
+  handleConnection(socket);
 });
+
+function handleConnection(socket: Socket) {
+  console.log(`User connected: ${socket.id}`);
+  broadcastEvent("a user connected");
+
+  socket.on("disconnect", () => {
+    console.log(`User disconnected: ${socket.id}`);
+    broadcastEvent("a user disconnected");
+  });
+
+  // messages
+  socket.on("event", (value: any) => {
+    console.log(`Received event from ${socket.id}:`, value);
+    broadcastEvent(value);
+    io.emit("typing_stop");
+  });
+
+  let typingTimeout: NodeJS.Timeout | null = null;
+  socket.on("typing", (username: string) => {
+    console.log(`${username} is typing...`);
+    io.emit("typing", `${username}`);
+
+    if (typingTimeout) {
+      clearTimeout(typingTimeout);
+    }
+
+    typingTimeout = setTimeout(() => {
+      io.emit("typing_stop");
+      typingTimeout = null;
+    }, 2000);
+  });
+}
+
+// broadcast messages to all clients
+function broadcastEvent(message: string) {
+  io.emit("event", message);
+}
