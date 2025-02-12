@@ -4,6 +4,7 @@ import { serve } from "@hono/node-server";
 import { Hono } from "hono";
 import type { Http2Server } from "http2";
 import { Server, Socket } from "socket.io";
+import { addUser, getUser, getUsers, removeUser } from "./data.js";
 
 const app = new Hono();
 
@@ -28,43 +29,33 @@ const io = new Server(server as Http2Server, {
   },
 });
 
-io.on("connection", (socket) => {
-  handleConnection(socket);
-});
+function joinRoom(socket: Socket, name: string, roomId: string) {
+  socket.join(roomId);
+  socket.to(roomId).emit("room-joined", { roomId, name });
+  addUser({ id: socket.id, name, roomId });
+  const users = getUsers({
+    roomId,
+  });
 
-function handleConnection(socket: Socket) {
-  console.log(`User connected: ${socket.id}`);
-  broadcastEvent("a user connected");
+  io.to(roomId).emit("update-members", users);
+}
+
+function handleDisconnect(socket: Socket) {
+  const user = getUser(socket.id);
+  if (!user) return;
+  removeUser(socket.id);
+  const users = getUsers({
+    roomId: user.roomId,
+  });
+  io.to(user.roomId).emit("update-members", users);
+}
+
+io.on("connection", (socket) => {
+  socket.on("join-room", ({ name, roomId }) => {
+    joinRoom(socket, name, roomId);
+  });
 
   socket.on("disconnect", () => {
-    console.log(`User disconnected: ${socket.id}`);
-    broadcastEvent("a user disconnected");
+    handleDisconnect(socket);
   });
-
-  // messages
-  socket.on("event", (value: any) => {
-    console.log(`Received event from ${socket.id}:`, value);
-    broadcastEvent(value);
-    io.emit("typing_stop");
-  });
-
-  let typingTimeout: NodeJS.Timeout | null = null;
-  socket.on("typing", (username: string) => {
-    console.log(`${username} is typing...`);
-    io.emit("typing", `${username}`);
-
-    if (typingTimeout) {
-      clearTimeout(typingTimeout);
-    }
-
-    typingTimeout = setTimeout(() => {
-      io.emit("typing_stop");
-      typingTimeout = null;
-    }, 2000);
-  });
-}
-
-// broadcast messages to all clients
-function broadcastEvent(message: string) {
-  io.emit("event", message);
-}
+});
