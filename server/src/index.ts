@@ -1,5 +1,3 @@
-// "taskkill /f /im node.exe" if port is already in use
-
 import { serve } from "@hono/node-server";
 import { Hono } from "hono";
 import type { Http2Server } from "http2";
@@ -7,12 +5,8 @@ import { Server, Socket } from "socket.io";
 import { addUser, getUser, getUsers, removeUser } from "./data.js";
 
 const app = new Hono();
-
-app.get("/", (c) => {
-  return c.text("Hello Hono!");
-});
-
 const port = 3000;
+
 console.log(`Server is running on http://localhost:${port}`);
 
 const server = serve({
@@ -24,38 +18,67 @@ const io = new Server(server as Http2Server, {
   path: "/",
   serveClient: false,
   cors: {
-    origin: "http://localhost:5173",
-    credentials: true,
+    origin: "*",
   },
 });
 
+const WS_EVENTS = {
+  JOIN_ROOM: "join-room",
+  DISCONNECT: "disconnect",
+  LEAVE_ROOM: "leave-room",
+} as const;
+
+const WS_SUBTYPES = {
+  ROOM_JOINED: "room-joined",
+  UPDATE_MEMBERS: "update-members",
+  ROOM_LEFT: "room-left",
+} as const;
+
 function joinRoom(socket: Socket, name: string, roomId: string) {
   socket.join(roomId);
-  socket.to(roomId).emit("room-joined", { roomId, name });
-  addUser({ id: socket.id, name, roomId });
-  const users = getUsers({
-    roomId,
-  });
+  socket.to(roomId).emit(WS_SUBTYPES.ROOM_JOINED, { roomId, name });
 
-  io.to(roomId).emit("update-members", users);
+  addUser({ id: socket.id, name, roomId });
+  const users = getUsers({ roomId });
+
+  io.to(roomId).emit(WS_SUBTYPES.UPDATE_MEMBERS, users);
 }
 
 function handleDisconnect(socket: Socket) {
   const user = getUser(socket.id);
   if (!user) return;
+
   removeUser(socket.id);
-  const users = getUsers({
-    roomId: user.roomId,
-  });
-  io.to(user.roomId).emit("update-members", users);
+  const users = getUsers({ roomId: user.roomId });
+
+  io.to(user.roomId).emit(WS_SUBTYPES.UPDATE_MEMBERS, users);
+  socket
+    .to(user.roomId)
+    .emit(WS_SUBTYPES.ROOM_LEFT, { roomId: user.roomId, name: user.name });
+}
+
+function leaveRoom(socket: Socket, roomId: string) {
+  const user = getUser(socket.id);
+  if (!user) return;
+
+  removeUser(socket.id);
+  const users = getUsers({ roomId });
+
+  socket.leave(roomId);
+  io.to(roomId).emit(WS_SUBTYPES.UPDATE_MEMBERS, users);
+  socket.to(roomId).emit(WS_SUBTYPES.ROOM_LEFT, { roomId, name: user.name });
 }
 
 io.on("connection", (socket) => {
-  socket.on("join-room", ({ name, roomId }) => {
+  socket.on(WS_EVENTS.JOIN_ROOM, ({ name, roomId }) => {
     joinRoom(socket, name, roomId);
   });
 
-  socket.on("disconnect", () => {
+  socket.on(WS_EVENTS.DISCONNECT, () => {
     handleDisconnect(socket);
+  });
+
+  socket.on(WS_EVENTS.LEAVE_ROOM, ({ roomId }) => {
+    leaveRoom(socket, roomId);
   });
 });

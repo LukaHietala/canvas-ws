@@ -1,8 +1,4 @@
-type User = {
-  id: string;
-  name: string;
-  roomId: string;
-};
+import type { User } from "./types.ts";
 
 let users: User[] = [];
 
