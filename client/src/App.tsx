@@ -1,6 +1,7 @@
 import "./App.css";
 import { useState, useEffect } from "react";
 import { socket } from "./socket";
+import { Button } from "./components/ui/button";
 
 interface EventsProps {
   events: string[];
@@ -62,6 +63,9 @@ export default function App() {
 
   return (
     <div>
+      <Button variant="default" size="default">
+        df
+      </Button>
       <p>Status: {isConnected ? "Connected" : "Disconnected"}</p>
       <main>
         <div>
