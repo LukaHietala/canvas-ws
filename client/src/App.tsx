@@ -53,10 +53,15 @@ export default function App() {
       setMembers(members);
     });
 
+    socket.on("invalid-data", (error: string) => {
+      console.error(error);
+    });
+
     return () => {
       socket.off("room-joined");
       socket.off("update-members");
       socket.off("room-left");
+      socket.off("invalid-data");
     };
   }, []);
 

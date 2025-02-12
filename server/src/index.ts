@@ -3,6 +3,7 @@ import { Hono } from "hono";
 import type { Http2Server } from "http2";
 import { Server, Socket } from "socket.io";
 import { addUser, getUser, getUsers, removeUser } from "./data.js";
+import { JoinRoomSchema } from "./validation.js";
 
 const app = new Hono();
 const port = 3000;
@@ -32,9 +33,19 @@ const WS_SUBTYPES = {
   ROOM_JOINED: "room-joined",
   UPDATE_MEMBERS: "update-members",
   ROOM_LEFT: "room-left",
+  INVALID_DATA: "invalid-data",
 } as const;
 
 function joinRoom(socket: Socket, name: string, roomId: string) {
+  const joinRoomData = JoinRoomSchema.safeParse({ name, roomId });
+
+  if (!joinRoomData.success) {
+    return socket.emit(
+      WS_SUBTYPES.INVALID_DATA,
+      "Invalid input data. Room ID must be between 4 and 20 characters, and name must be between 1 and 20 characters."
+    );
+  }
+
   socket.join(roomId);
   socket.to(roomId).emit(WS_SUBTYPES.ROOM_JOINED, { roomId, name });
 
